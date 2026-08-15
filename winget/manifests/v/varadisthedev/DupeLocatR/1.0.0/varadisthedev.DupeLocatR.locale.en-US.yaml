@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: varadisthedev.DupeLocatR
+PackageVersion: 1.0.0
+PackageLocale: en-US
+Publisher: varadisthedev
+PublisherUrl: https://github.com/varadisthedev
+PackageName: DupeLocatR
+PackageUrl: https://github.com/varadisthedev/DupeLocatR
+License: MIT
+LicenseUrl: https://github.com/varadisthedev/DupeLocatR/blob/main/LICENSE
+ShortDescription: Fast, menu-driven duplicate file finder for Windows. Run it anywhere with `dlr`.
+Description: |-
+  DupeLocatR is a PowerShell-based duplicate file scanner for Windows that uses a
+  3-stage tiered hashing pipeline to avoid wasting I/O on large files:
+
+    Stage 1 — Group by file size (instant, zero disk reads)
+    Stage 2 — Tiered content sampling:
+                < 10 MB   → skip sampling, direct full hash
+               10–500 MB  → first + last 64 KB sample
+                > 500 MB  → first + middle + last + 2 deterministic-random 64 KB samples
+    Stage 3 — Full MD5 or SHA256 hash (only on files that passed Stage 2)
+
+  After install, type `dlr` in any terminal from any directory to start a scan.
+  DupeLocatR never deletes or moves anything without explicit confirmation.
+  Duplicates are sent to the Recycle Bin, not permanently removed.
+Tags:
+  - duplicate
+  - files
+  - cleaner
+  - powershell
+  - utility
+  - deduplication
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

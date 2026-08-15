@@ -1,0 +1,15 @@
+{
+  "version": "1.0.0",
+  "description": "Fast, menu-driven duplicate file finder for Windows. Type `dlr` from anywhere to scan.",
+  "homepage": "https://github.com/varadisthedev/DupeLocatR",
+  "license": "MIT",
+  "url": "https://github.com/varadisthedev/DupeLocatR/releases/download/v1.0.0/DupeLocatR-1.0.0.zip",
+  "hash": "REPLACE_WITH_SHA256_FROM_make-release-zip.ps1",
+  "bin": [["dlr.cmd", "dlr"]],
+  "checkver": {
+    "github": "https://github.com/varadisthedev/DupeLocatR"
+  },
+  "autoupdate": {
+    "url": "https://github.com/varadisthedev/DupeLocatR/releases/download/v$version/DupeLocatR-$version.zip"
+  }
+}

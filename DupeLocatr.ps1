@@ -13,6 +13,9 @@ $Script:HashAlgo = "MD5"          # MD5 (fast, default) or SHA256 (slower/strong
 $Script:KeepStrategy = "First"        # First | Oldest | Newest | ShortestPath
 $Script:CategoryFilter = "All"          # All | Images | Videos | Music | Text | Documents | Archives
 $Script:MinFileSizeBytes = 1            # ignore 0-byte files by default
+$Script:SmallFileLimitBytes = 10MB      # < 10 MB  → direct full hash (no sampling needed)
+$Script:LargeFileLimitBytes = 500MB     # > 500 MB → 5-point sampling before full hash
+$Script:SampleBytes = 65536             # 64 KB per sample window
 $Script:ExcludeFolders = @(
     $Script:DupeFolderName, '.git', '.svn', 'node_modules',
     '$RECYCLE.BIN', 'System Volume Information', '.vs', '.vscode', '__pycache__'
@@ -20,6 +23,8 @@ $Script:ExcludeFolders = @(
 $Script:LogPath = Join-Path $Script:RootPath "dupeLocatr_log.txt"
 $Script:ScriptSelf = $PSCommandPath
 $Script:LastResults = $null
+$Script:MaxThreads = 0            # 0 = Auto (min(8, ProcessorCount)); 1 disables parallelism
+$Script:ExcludeSet = $null        # built by Update-ExcludeSet
 
 $Script:Categories = @{
     'Images'    = @('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp', '.heic', '.heif', '.svg', '.ico', '.raw', '.cr2', '.nef', '.arw', '.dng')
@@ -61,15 +66,24 @@ function Write-Banner {
     # Write-Host ""
 }
 
-function Test-IsExcluded {
+function Update-ExcludeSet {
+    $Script:ExcludeSet = [System.Collections.Generic.HashSet[string]]::new(
+        [string[]]($Script:ExcludeFolders | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }),
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+}
+
+function Test-IsExcludedDirName {
+    param([string]$Name)
+    if (-not $Script:ExcludeSet) { Update-ExcludeSet }
+    return $Script:ExcludeSet.Contains($Name)
+}
+
+function Test-IsExcludedFile {
     param([string]$FullPath)
     if ($Script:ScriptSelf -and $FullPath -eq $Script:ScriptSelf) { return $true }
     if ($FullPath -eq $Script:LogPath) { return $true }
     if ($FullPath -like "*dupeLocatr_*") { return $true }
-    foreach ($ex in $Script:ExcludeFolders) {
-        if ([string]::IsNullOrWhiteSpace($ex)) { continue }
-        if ($FullPath -like "*\$ex\*" -or $FullPath -like "*/$ex/*") { return $true }
-    }
     return $false
 }
 
@@ -81,18 +95,113 @@ function Test-CategoryMatch {
     return ($Script:Categories[$Script:CategoryFilter] -contains $ext)
 }
 
-function Get-PartialHash {
-    param([string]$Path, [int]$SampleBytes = 65536)
+# Read exactly $Count bytes from $Stream starting at $Offset, padding with zeros if near EOF.
+function Read-SampleBlock {
+    param([System.IO.FileStream]$Stream, [long]$Offset, [int]$Count)
+    $buf = New-Object byte[] $Count
+    $stream.Seek($Offset, [System.IO.SeekOrigin]::Begin) | Out-Null
+    $read = 0
+    while ($read -lt $Count) {
+        $n = $stream.Read($buf, $read, $Count - $read)
+        if ($n -le 0) { break }
+        $read += $n
+    }
+    return $buf
+}
+
+# Returns a short MD5-based key string built from sampled bytes, or $null on error.
+# Tier logic:
+#   < SmallFileLimitBytes  → returns sentinel "SMALL" (caller routes to direct full hash)
+#   SmallFileLimitBytes..LargeFileLimitBytes → first + last sample
+#   > LargeFileLimitBytes  → first + middle + last + 2 deterministic-random samples
+function Get-SampledKey {
+    param(
+        [string]$Path,
+        [long]$FileLength,
+        [long]$SmallFileLimitBytes = $Script:SmallFileLimitBytes,
+        [long]$LargeFileLimitBytes = $Script:LargeFileLimitBytes,
+        [int]$SampleBytes = $Script:SampleBytes
+    )
+
+    # Tier 1: small file – signal to skip sampling entirely
+    if ($FileLength -lt $SmallFileLimitBytes) { return "SMALL" }
+
+    $s = $SampleBytes
     try {
         $stream = [System.IO.File]::OpenRead($Path)
         try {
-            $len = [Math]::Min($SampleBytes, [int]$stream.Length)
-            if ($len -le 0) { return "EMPTY" }
-            $buffer = New-Object byte[] $len
-            [void]$stream.Read($buffer, 0, $len)
             $md5 = [System.Security.Cryptography.MD5]::Create()
-            $hashBytes = $md5.ComputeHash($buffer)
-            return [System.BitConverter]::ToString($hashBytes) -replace '-', ''
+
+            if ($FileLength -le $LargeFileLimitBytes) {
+                # Tier 2: medium file – first + last blocks
+                $first = Read-SampleBlock -Stream $stream -Offset 0                           -Count $s
+                $last  = Read-SampleBlock -Stream $stream -Offset ([Math]::Max(0, $FileLength - $s)) -Count $s
+                $md5.TransformBlock($first, 0, $first.Length, $null, 0) | Out-Null
+                $md5.TransformFinalBlock($last,  0, $last.Length)        | Out-Null
+            }
+            else {
+                # Tier 3: large file – first + middle + last + 2 deterministic random offsets
+                $mid     = [Math]::Max(0, ($FileLength / 2) - ($s / 2))
+                # Seed two pseudo-random offsets from file length so same-size files hit same spots
+                $rng     = [System.Random]::new([int]($FileLength % [int]::MaxValue))
+                $rand1   = [long]($rng.NextDouble() * ($FileLength - $s))
+                $rand2   = [long]($rng.NextDouble() * ($FileLength - $s))
+
+                $blocks = @(
+                    (Read-SampleBlock -Stream $stream -Offset 0                                   -Count $s),
+                    (Read-SampleBlock -Stream $stream -Offset $mid                                -Count $s),
+                    (Read-SampleBlock -Stream $stream -Offset ([Math]::Max(0,$FileLength - $s))   -Count $s),
+                    (Read-SampleBlock -Stream $stream -Offset $rand1                              -Count $s),
+                    (Read-SampleBlock -Stream $stream -Offset $rand2                              -Count $s)
+                )
+                for ($bi = 0; $bi -lt $blocks.Count - 1; $bi++) {
+                    $md5.TransformBlock($blocks[$bi], 0, $blocks[$bi].Length, $null, 0) | Out-Null
+                }
+                $last = $blocks[$blocks.Count - 1]
+                $md5.TransformFinalBlock($last, 0, $last.Length) | Out-Null
+            }
+
+            return [System.BitConverter]::ToString($md5.Hash) -replace '-', ''
+        }
+        finally {
+            $stream.Dispose()
+        }
+    }
+    catch {
+        return $null
+    }
+}
+
+# Direct streaming hash of an entire file (replaces the Get-FileHash cmdlet for Stage 3).
+# Takes no $Script: dependencies so it can run unchanged inside a worker runspace.
+function Get-FullFileHash {
+    param([string]$Path, [string]$Algorithm = 'MD5')
+
+    $bufferSize = 1MB
+    try {
+        $stream = [System.IO.File]::OpenRead($Path)
+        try {
+            $hasher = if ($Algorithm -eq 'SHA256') {
+                [System.Security.Cryptography.SHA256]::Create()
+            } else {
+                [System.Security.Cryptography.MD5]::Create()
+            }
+            # Double-buffer so the final chunk (which needs TransformFinalBlock,
+            # not TransformBlock) is known before it's processed.
+            $buf = New-Object byte[] $bufferSize
+            $read = $stream.Read($buf, 0, $bufferSize)
+            while ($true) {
+                $next = New-Object byte[] $bufferSize
+                $nextRead = $stream.Read($next, 0, $bufferSize)
+                if ($nextRead -le 0) {
+                    $hasher.TransformFinalBlock($buf, 0, $read) | Out-Null
+                    break
+                }
+                $hasher.TransformBlock($buf, 0, $read, $null, 0) | Out-Null
+                $buf = $next
+                $read = $nextRead
+            }
+            return [System.BitConverter]::ToString($hasher.Hash) -replace '-', ''
         }
         finally {
             $stream.Dispose()
@@ -108,19 +217,34 @@ function Get-PartialHash {
 # ======================================================================
 function Get-CandidateFiles {
     Write-Host "  Scanning folders under: $Script:RootPath" -ForegroundColor Cyan
+    Update-ExcludeSet
     $found = New-Object System.Collections.Generic.List[System.IO.FileInfo]
     $counter = 0
 
-    Get-ChildItem -LiteralPath $Script:RootPath -File -Recurse -Force -ErrorAction SilentlyContinue |
-    ForEach-Object {
-        $counter++
-        if ($counter % 150 -eq 0) {
-            Write-Progress -Activity "DupeLocatr | Enumerating files" -Status "$counter files found so far..."
+    $stack = New-Object System.Collections.Generic.Stack[System.IO.DirectoryInfo]
+    $stack.Push([System.IO.DirectoryInfo]::new($Script:RootPath))
+
+    while ($stack.Count -gt 0) {
+        $dir = $stack.Pop()
+
+        try { $subDirs = $dir.GetDirectories() } catch { $subDirs = @() }
+        foreach ($subDir in $subDirs) {
+            if (-not (Test-IsExcludedDirName $subDir.Name)) {
+                $stack.Push($subDir)
+            }
         }
-        if (-not (Test-IsExcluded $_.FullName)) {
-            if ($_.Length -ge $Script:MinFileSizeBytes) {
-                if (Test-CategoryMatch $_.Extension) {
-                    $found.Add($_)
+
+        try { $files = $dir.GetFiles() } catch { $files = @() }
+        foreach ($file in $files) {
+            $counter++
+            if ($counter % 150 -eq 0) {
+                Write-Progress -Activity "DupeLocatr | Enumerating files" -Status "$counter files found so far..."
+            }
+            if (-not (Test-IsExcludedFile $file.FullName)) {
+                if ($file.Length -ge $Script:MinFileSizeBytes) {
+                    if (Test-CategoryMatch $file.Extension) {
+                        $found.Add($file)
+                    }
                 }
             }
         }
@@ -129,6 +253,117 @@ function Get-CandidateFiles {
     Write-Progress -Activity "DupeLocatr | Enumerating files" -Completed
     Write-Host "  Total files considered: $($found.Count)" -ForegroundColor Gray
     return $found
+}
+
+function Group-FilesBySize {
+    param([System.Collections.Generic.List[System.IO.FileInfo]]$Files)
+    $buckets = New-Object 'System.Collections.Generic.Dictionary[long,System.Collections.Generic.List[System.IO.FileInfo]]'
+    foreach ($f in $Files) {
+        $list = $null
+        if (-not $buckets.TryGetValue($f.Length, [ref]$list)) {
+            $list = New-Object System.Collections.Generic.List[System.IO.FileInfo]
+            $buckets[$f.Length] = $list
+        }
+        $list.Add($f)
+    }
+    $candidates = New-Object System.Collections.Generic.List[System.IO.FileInfo]
+    foreach ($list in $buckets.Values) {
+        if ($list.Count -gt 1) {
+            foreach ($item in $list) { $candidates.Add($item) }
+        }
+    }
+    return $candidates
+}
+
+# Builds a RunspacePool whose worker runspaces have Read-SampleBlock / Get-SampledKey /
+# Get-FullFileHash predefined, so parallel workers can call them without re-declaring them.
+function New-DlrRunspacePool {
+    param([int]$MaxThreads)
+    $iss = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+    $iss.Commands.Add([System.Management.Automation.Runspaces.SessionStateFunctionEntry]::new('Read-SampleBlock', ${function:Read-SampleBlock}))
+    $iss.Commands.Add([System.Management.Automation.Runspaces.SessionStateFunctionEntry]::new('Get-SampledKey', ${function:Get-SampledKey}))
+    $iss.Commands.Add([System.Management.Automation.Runspaces.SessionStateFunctionEntry]::new('Get-FullFileHash', ${function:Get-FullFileHash}))
+    $pool = [runspacefactory]::CreateRunspacePool(1, [Math]::Max(1, $MaxThreads), $iss, $Host)
+    $pool.ApartmentState = 'MTA'
+    $pool.Open()
+    return $pool
+}
+
+# Runs $Worker (a scriptblock taking one FileInfo positional arg and returning a result
+# object) over $Files, either sequentially (small file counts, or MaxThreads<=1) or in
+# parallel via a RunspacePool. Aggregation always happens back on the calling thread.
+function Invoke-DlrParallelStage {
+    param(
+        [System.Collections.Generic.List[System.IO.FileInfo]]$Files,
+        [scriptblock]$Worker,
+        [string]$ActivityName,
+        [int]$MaxThreads,
+        [int]$MinParallelThreshold = 32
+    )
+
+    $total = $Files.Count
+    $results = New-Object System.Collections.Generic.List[psobject]
+    if ($total -eq 0) { return $results }
+
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+
+    if ($total -lt $MinParallelThreshold -or $MaxThreads -le 1) {
+        $i = 0
+        foreach ($f in $Files) {
+            $i++
+            if ($sw.ElapsedMilliseconds -ge 200 -or $i -eq $total) {
+                Write-Progress -Activity $ActivityName -Status "$i / $total : $($f.Name)" -PercentComplete ([Math]::Round(($i / $total) * 100))
+                $sw.Restart()
+            }
+            $results.Add((& $Worker $f))
+        }
+        Write-Progress -Activity $ActivityName -Completed
+        return $results
+    }
+
+    $pool = New-DlrRunspacePool -MaxThreads $MaxThreads
+    try {
+        $workerText = $Worker.ToString()
+        $pending = New-Object System.Collections.Generic.List[psobject]
+        foreach ($f in $Files) {
+            $ps = [powershell]::Create()
+            $ps.RunspacePool = $pool
+            [void]$ps.AddScript($workerText).AddArgument($f)
+            $handle = $ps.BeginInvoke()
+            $pending.Add([PSCustomObject]@{ PS = $ps; Handle = $handle })
+        }
+
+        $completedCount = 0
+        while ($pending.Count -gt 0) {
+            for ($idx = $pending.Count - 1; $idx -ge 0; $idx--) {
+                $item = $pending[$idx]
+                if ($item.Handle.IsCompleted) {
+                    try {
+                        $out = $item.PS.EndInvoke($item.Handle)
+                        foreach ($o in $out) { $results.Add($o) }
+                    }
+                    catch {
+                        # A single file's worker failing (deleted mid-scan, path too long, etc.)
+                        # must not abort the rest of the scan - just drop that file's result.
+                    }
+                    $item.PS.Dispose()
+                    $pending.RemoveAt($idx)
+                    $completedCount++
+                }
+            }
+            if ($sw.ElapsedMilliseconds -ge 200 -or $pending.Count -eq 0) {
+                Write-Progress -Activity $ActivityName -Status "$completedCount / $total" -PercentComplete ([Math]::Round(($completedCount / $total) * 100))
+                $sw.Restart()
+            }
+            if ($pending.Count -gt 0) { Start-Sleep -Milliseconds 25 }
+        }
+        Write-Progress -Activity $ActivityName -Completed
+    }
+    finally {
+        $pool.Close()
+        $pool.Dispose()
+    }
+    return $results
 }
 
 function Find-Duplicates {
@@ -140,9 +375,7 @@ function Find-Duplicates {
 
     # ---- Stage 1: group by size (instant) ----
     Write-Host "  Stage 1/3: grouping by file size..." -ForegroundColor Cyan
-    $sizeGroups = $allFiles | Group-Object Length | Where-Object { $_.Count -gt 1 }
-    $sizeCandidates = New-Object System.Collections.Generic.List[System.IO.FileInfo]
-    foreach ($g in $sizeGroups) { foreach ($item in $g.Group) { $sizeCandidates.Add($item) } }
+    $sizeCandidates = Group-FilesBySize -Files $allFiles
 
     if ($sizeCandidates.Count -eq 0) {
         Write-Host "  Every file has a unique size - nothing to compare further." -ForegroundColor Yellow
@@ -150,51 +383,72 @@ function Find-Duplicates {
     }
     Write-Host "  $($sizeCandidates.Count) file(s) share a size with at least one other file." -ForegroundColor Gray
 
-    # ---- Stage 2: quick partial hash (64 KB sample) ----
-    Write-Host "  Stage 2/3: quick content check..." -ForegroundColor Cyan
-    $partialMap = @{}
-    $i = 0
-    $total = $sizeCandidates.Count
-    foreach ($f in $sizeCandidates) {
-        $i++
-        Write-Progress -Activity "DupeLocatr | Quick content check" -Status "$i / $total : $($f.Name)" -PercentComplete ([Math]::Round(($i / $total) * 100))
-        $ph = Get-PartialHash -Path $f.FullName
-        if ($null -ne $ph) {
-            $key = "$($f.Length)_$ph"
-            if (-not $partialMap.ContainsKey($key)) {
-                $partialMap[$key] = New-Object System.Collections.Generic.List[System.IO.FileInfo]
+    $resolvedMaxThreads = if ($Script:MaxThreads -gt 0) { $Script:MaxThreads } else { [Math]::Min(8, [Environment]::ProcessorCount) }
+
+    # ---- Stage 2: tiered sampling (small files bypass directly to Stage 3) ----
+    Write-Host "  Stage 2/3: tiered content sampling..." -ForegroundColor Cyan
+    $directQueue = New-Object System.Collections.Generic.List[System.IO.FileInfo]  # < 10 MB
+    $sampleMap   = @{}                                                              # >= 10 MB
+
+    # $Script:SmallFileLimitBytes / LargeFileLimitBytes / SampleBytes aren't visible inside a
+    # worker runspace (Get-SampledKey's parameter defaults would silently resolve to $null
+    # there), so bake the current values in as literals instead of relying on the defaults.
+    $stage2Worker = [scriptblock]::Create(@"
+param(`$f)
+`$key = Get-SampledKey -Path `$f.FullName -FileLength `$f.Length -SmallFileLimitBytes $($Script:SmallFileLimitBytes) -LargeFileLimitBytes $($Script:LargeFileLimitBytes) -SampleBytes $($Script:SampleBytes)
+[PSCustomObject]@{ File = `$f; Result = `$key }
+"@)
+    $sampleResults = Invoke-DlrParallelStage -Files $sizeCandidates -Worker $stage2Worker -ActivityName "DupeLocatr | Tiered sampling" -MaxThreads $resolvedMaxThreads
+
+    foreach ($r in $sampleResults) {
+        $f = $r.File
+        $sampleKey = $r.Result
+        if ($sampleKey -eq "SMALL") {
+            # Tier 1: small file → queue for direct full hash
+            $directQueue.Add($f)
+        }
+        elseif ($null -ne $sampleKey) {
+            # Tier 2 / Tier 3: medium or large file → group by sample fingerprint
+            $key = "$($f.Length)_$sampleKey"
+            if (-not $sampleMap.ContainsKey($key)) {
+                $sampleMap[$key] = New-Object System.Collections.Generic.List[System.IO.FileInfo]
             }
-            $partialMap[$key].Add($f)
+            $sampleMap[$key].Add($f)
         }
     }
-    Write-Progress -Activity "DupeLocatr | Quick content check" -Completed
 
     $fullCandidates = New-Object System.Collections.Generic.List[System.IO.FileInfo]
-    foreach ($key in $partialMap.Keys) {
-        if ($partialMap[$key].Count -gt 1) {
-            foreach ($item in $partialMap[$key]) { $fullCandidates.Add($item) }
+    # Direct-queue small files always advance to full hash
+    foreach ($item in $directQueue) { $fullCandidates.Add($item) }
+    # Medium/large files only advance if their sample fingerprint is shared
+    foreach ($key in $sampleMap.Keys) {
+        if ($sampleMap[$key].Count -gt 1) {
+            foreach ($item in $sampleMap[$key]) { $fullCandidates.Add($item) }
         }
     }
 
     if ($fullCandidates.Count -eq 0) {
-        Write-Host "  Quick check found no real matches." -ForegroundColor Yellow
+        Write-Host "  Sampling found no content matches." -ForegroundColor Yellow
         return $null
     }
+    $smallCount  = $directQueue.Count
+    $sampleCount = $fullCandidates.Count - $smallCount
+    Write-Host "  $smallCount small file(s) queued for direct hash; $sampleCount larger file(s) passed sample check." -ForegroundColor Gray
 
     # ---- Stage 3: full hash confirmation ----
     Write-Host "  Stage 3/3: confirming with a full $Script:HashAlgo hash..." -ForegroundColor Cyan
     $fullMap = @{}
-    $i = 0
-    $total = $fullCandidates.Count
-    foreach ($f in $fullCandidates) {
-        $i++
-        Write-Progress -Activity "DupeLocatr | Verifying duplicates" -Status "$i / $total : $($f.Name)" -PercentComplete ([Math]::Round(($i / $total) * 100))
-        try {
-            $h = (Get-FileHash -LiteralPath $f.FullName -Algorithm $Script:HashAlgo -ErrorAction Stop).Hash
-        }
-        catch {
-            $h = $null
-        }
+
+    # $Script:HashAlgo isn't visible inside a worker runspace, so bake it in as a literal.
+    $hashAlgoLiteral = $Script:HashAlgo
+    $stage3Worker = [scriptblock]::Create(
+        "param(`$f) `$h = Get-FullFileHash -Path `$f.FullName -Algorithm '$hashAlgoLiteral'; [PSCustomObject]@{ File = `$f; Result = `$h }"
+    )
+    $hashResults = Invoke-DlrParallelStage -Files $fullCandidates -Worker $stage3Worker -ActivityName "DupeLocatr | Verifying duplicates" -MaxThreads $resolvedMaxThreads
+
+    foreach ($r in $hashResults) {
+        $f = $r.File
+        $h = $r.Result
         if ($h) {
             $key = "$($f.Length)_$h"
             if (-not $fullMap.ContainsKey($key)) {
@@ -203,7 +457,6 @@ function Find-Duplicates {
             $fullMap[$key].Add($f)
         }
     }
-    Write-Progress -Activity "DupeLocatr | Verifying duplicates" -Completed
 
     # ---- Build result groups ----
     $results = @()
@@ -465,9 +718,11 @@ function Show-SettingsMenu {
         Write-Host "   [3] Category filter       : $Script:CategoryFilter"
         Write-Host "   [4] Excluded folders      : $($Script:ExcludeFolders -join ', ')"
         Write-Host "   [5] Duplicate folder name : $Script:DupeFolderName"
-        Write-Host "   [6] Back to main menu"
+        $threadLabel = if ($Script:MaxThreads -gt 0) { "$Script:MaxThreads" } else { "Auto (min(8, $([Environment]::ProcessorCount)))" }
+        Write-Host "   [6] Parallel threads      : $threadLabel"
+        Write-Host "   [7] Back to main menu"
         Write-Host ""
-        $c = Read-Host "  Choose an option (1-6)"
+        $c = Read-Host "  Choose an option (1-7)"
         switch ($c) {
             '1' {
                 Write-Host "   a) MD5 (fast, default)"
@@ -504,13 +759,29 @@ function Show-SettingsMenu {
                 if ($newList) {
                     $Script:ExcludeFolders = @(($newList -split ',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
                     $Script:ExcludeFolders += $Script:DupeFolderName
+                    Update-ExcludeSet
                 }
             }
             '5' {
                 $newName = Read-Host "  Enter new duplicate folder name"
                 if ($newName) { $Script:DupeFolderName = $newName }
             }
-            '6' { $back = $true }
+            '6' {
+                Write-Host "   Enter a thread count, or leave blank / type 'auto' for automatic (min(8, CPU cores))."
+                Write-Host "   Enter 1 to disable parallelism entirely."
+                $t = Read-Host "  Choose"
+                if ([string]::IsNullOrWhiteSpace($t) -or $t -eq 'auto') {
+                    $Script:MaxThreads = 0
+                }
+                elseif ($t -match '^\d+$' -and [int]$t -gt 0) {
+                    $Script:MaxThreads = [int]$t
+                }
+                else {
+                    Write-Host "  Invalid value, keeping current setting." -ForegroundColor Red
+                    Start-Sleep -Seconds 1
+                }
+            }
+            '7' { $back = $true }
             default { Write-Host "  Invalid choice." -ForegroundColor Red; Start-Sleep -Seconds 1 }
         }
     }
@@ -553,9 +824,18 @@ function Show-MainMenu {
             '4' {
                 Clear-Host
                 Write-Banner
-                Write-Host "  DupeLocatr finds duplicate files by comparing size, then a" -ForegroundColor White
-                Write-Host "  quick partial hash, then a full hash - so it never reads an" -ForegroundColor White
-                Write-Host "  entire large video/audio file unless it truly has to." -ForegroundColor White
+                Write-Host "  DupeLocatr finds duplicates in three stages:" -ForegroundColor White
+                Write-Host "   1. Group by file size (instant - no I/O)" -ForegroundColor White
+                Write-Host "   2. Tiered content sampling:" -ForegroundColor White
+                Write-Host "       < 10 MB   : skip sampling, direct full hash" -ForegroundColor White
+                Write-Host "      10-500 MB  : first + last 64 KB sample" -ForegroundColor White
+                Write-Host "      > 500 MB   : first + middle + last + 2 random 64 KB samples" -ForegroundColor White
+                Write-Host "   3. Full hash only on files that passed stage 2" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  Excluded folders (.git, node_modules, etc.) are skipped during the" -ForegroundColor White
+                Write-Host "  folder walk itself, not scanned then discarded." -ForegroundColor White
+                Write-Host "  Stages 2 and 3 run in parallel across multiple threads for large" -ForegroundColor White
+                Write-Host "  scans (configurable in Settings)." -ForegroundColor White
                 Write-Host ""
                 Write-Host "  It never deletes or moves anything without asking first." -ForegroundColor White
                 Write-Host "  Deletions go to the Recycle Bin, not permanent removal." -ForegroundColor White
