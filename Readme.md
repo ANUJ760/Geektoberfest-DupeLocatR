@@ -7,20 +7,24 @@
 ## Install
 
 ### via winget *(pending review)*
+
 ```powershell
 winget install varadisthedev.DupeLocatR
 ```
 
 ### via Scoop *(available immediately)*
+
 ```powershell
 scoop bucket add varad https://github.com/varadisthedev/scoop-bucket
 scoop install dupelocatr
 ```
 
 After either install, open **any** terminal and type:
+
 ```
 dlr
 ```
+
 DupeLocatR scans the current directory for duplicates.
 
 ---
@@ -43,7 +47,7 @@ Run_DupeLocatr.bat
 DupeLocatR uses a **3-stage tiered hashing pipeline** to avoid wasting I/O on large files:
 
 | Stage | What happens | Cost |
-|-------|-------------|------|
+| ------- | ------------- | ------ |
 | **1 — Size grouping** | Files with unique sizes are eliminated instantly | Zero disk reads |
 | **2 — Tiered sampling** | Files are fingerprinted based on their size tier (see below) | Minimal reads |
 | **3 — Full hash** | Only confirmed candidates are fully hashed (MD5 or SHA256) | Targeted |
@@ -51,7 +55,7 @@ DupeLocatR uses a **3-stage tiered hashing pipeline** to avoid wasting I/O on la
 ### Sampling tiers (Stage 2)
 
 | File size | Sample strategy |
-|-----------|----------------|
+| ----------- | ---------------- |
 | **< 10 MB** | Skip sampling → direct full hash |
 | **10 MB – 500 MB** | First 64 KB + Last 64 KB |
 | **> 500 MB** | First + Middle + Last + 2 deterministic-random 64 KB windows |
@@ -88,3 +92,5 @@ scoop uninstall dupelocatr
 ## License
 
 MIT
+
+test
