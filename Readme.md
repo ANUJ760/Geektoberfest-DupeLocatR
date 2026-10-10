@@ -12,6 +12,13 @@
 2. Extract it anywhere and add that folder to your `PATH`.
 3. Open any terminal and type `dlr`.
 
+### via Scoop *(available now, one command)*
+
+```powershell
+scoop install https://raw.githubusercontent.com/varadisthedev/DupeLocatR/main/scoop/dupelocatr.json
+dlr
+```
+
 ### via winget *(pending review — not yet available)*
 
 The manifest has been submitted to `microsoft/winget-pkgs` and is awaiting approval. Once merged:
@@ -87,6 +94,7 @@ Excluded folders (`.git`, `node_modules`, `.vs`, etc.) are skipped **during** th
 ## Uninstall
 
 ```powershell
+scoop uninstall dupelocatr                   # if installed via Scoop
 winget uninstall varadisthedev.DupeLocatR   # once available via winget
 ```
 
