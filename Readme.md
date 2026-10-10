@@ -19,6 +19,13 @@ scoop install https://raw.githubusercontent.com/varadisthedev/DupeLocatR/main/sc
 dlr
 ```
 
+Requires [Scoop](https://scoop.sh). Don't have it? Install it first:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+irm get.scoop.sh | iex
+```
+
 ### via winget *(pending review — not yet available)*
 
 The manifest has been submitted to `microsoft/winget-pkgs` and is awaiting approval. Once merged:
