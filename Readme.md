@@ -6,26 +6,31 @@
 
 ## Install
 
-### via winget *(pending review)*
+### Download from GitHub Releases *(available now)*
+
+1. Download `DupeLocatR-<version>.zip` from the [latest release](https://github.com/varadisthedev/DupeLocatR/releases/latest).
+2. Extract it anywhere and add that folder to your `PATH`.
+3. Open any terminal and type `dlr`.
+
+### via winget *(pending review — not yet available)*
+
+The manifest has been submitted to `microsoft/winget-pkgs` and is awaiting approval. Once merged:
 
 ```powershell
 winget install varadisthedev.DupeLocatR
 ```
 
-### via Scoop *(available immediately)*
+---
 
-```powershell
-scoop bucket add varad https://github.com/varadisthedev/scoop-bucket
-scoop install dupelocatr
-```
-
-After either install, open **any** terminal and type:
+## Usage
 
 ```
-dlr
+dlr                 Scan the current directory
+dlr <folder>        Scan a specific folder, e.g. dlr D:\Photos
+dlr help            Show the command list (also: -h, --help, /?)
 ```
 
-DupeLocatR scans the current directory for duplicates.
+The same help is available in the app via menu option **[4] About / help**.
 
 ---
 
@@ -82,15 +87,13 @@ Excluded folders (`.git`, `node_modules`, `.vs`, etc.) are skipped **during** th
 ## Uninstall
 
 ```powershell
-winget uninstall varadisthedev.DupeLocatR
-# or
-scoop uninstall dupelocatr
+winget uninstall varadisthedev.DupeLocatR   # once available via winget
 ```
+
+If you installed from the release ZIP, delete the extracted folder and remove it from `PATH`.
 
 ---
 
 ## License
 
 MIT
-
-test

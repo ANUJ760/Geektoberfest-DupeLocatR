@@ -1,7 +1,8 @@
 
 
 param(
-    [string]$Path = (Get-Location).Path
+    [string]$Path = (Get-Location).Path,
+    [Alias('h','?')][switch]$Help
 )
 
 # ======================================================================
@@ -787,6 +788,19 @@ function Show-SettingsMenu {
     }
 }
 
+function Show-Help {
+    Write-Host "  COMMANDS" -ForegroundColor Magenta
+    Write-Host "   dlr                  Scan the current directory" -ForegroundColor White
+    Write-Host "   dlr <folder>         Scan a specific folder, e.g. dlr D:\Photos" -ForegroundColor White
+    Write-Host "   dlr help | -h | /?   Show this help" -ForegroundColor White
+    Write-Host ""
+    Write-Host "  Without the shim:  powershell -File DupeLocatr.ps1 [-Path <folder>] [-Help]" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  MENU" -ForegroundColor Magenta
+    Write-Host "   [1] Start duplicate scan   [2] Settings   [3] View log   [4] Help   [5] Exit" -ForegroundColor White
+    Write-Host ""
+}
+
 function Show-MainMenu {
     $exit = $false
     while (-not $exit) {
@@ -841,6 +855,7 @@ function Show-MainMenu {
                 Write-Host "  Deletions go to the Recycle Bin, not permanent removal." -ForegroundColor White
                 Write-Host "  Moves use robocopy and land in the '$Script:DupeFolderName' folder." -ForegroundColor White
                 Write-Host ""
+                Show-Help
                 Read-Host "  Press Enter to go back" | Out-Null
             }
             '5' { $exit = $true }
@@ -855,4 +870,5 @@ function Show-MainMenu {
 # ======================================================================
 #  ENTRY POINT
 # ======================================================================
+if ($Help) { Show-Help; return }
 Show-MainMenu

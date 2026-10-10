@@ -9,6 +9,6 @@ NestedInstallerFiles:
 Installers:
   - Architecture: x64
     InstallerUrl: https://github.com/varadisthedev/DupeLocatR/releases/download/v1.0.0/DupeLocatR-1.0.0.zip
-    InstallerSha256: REPLACE_WITH_SHA256_FROM_make-release-zip.ps1
+    InstallerSha256: E0AE08A434B73FD2B90C5601E62DEC175AA9D1AD0C9B7F17F1BDFD62537B02F9
 ManifestType: installer
 ManifestVersion: 1.6.0
