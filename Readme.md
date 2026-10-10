@@ -93,4 +93,4 @@ scoop uninstall dupelocatr
 
 MIT
 
-test 3
+test 4
