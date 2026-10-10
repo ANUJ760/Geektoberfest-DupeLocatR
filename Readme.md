@@ -6,9 +6,11 @@
 
 ## Install
 
+**⬇️ Quick download:** [DupeLocatR-1.0.0.zip](https://github.com/Geektoberfest/Geektoberfest-DupeLocatR/releases/download/v1.0.0/DupeLocatR-1.0.0.zip) · [All releases](https://github.com/Geektoberfest/Geektoberfest-DupeLocatR/releases)
+
 ### Download from GitHub Releases *(available now)*
 
-1. Download `DupeLocatR-<version>.zip` from the [latest release](https://github.com/varadisthedev/DupeLocatR/releases/latest).
+1. Download `DupeLocatR-<version>.zip` from the [latest release](https://github.com/Geektoberfest/Geektoberfest-DupeLocatR/releases/latest).
 2. Extract it anywhere and add that folder to your `PATH`.
 3. Open any terminal and type `dlr`.
 
