@@ -94,7 +94,7 @@ Excluded folders (`.git`, `node_modules`, `.vs`, etc.) are skipped **during** th
 - **Keep strategy**: keep the alphabetically first / oldest / newest / shortest-path copy
 - **Parallel hashing**: sampling and full-hash confirmation run across multiple threads (auto-tuned to CPU cores, configurable)
 - **Safe actions**: Move duplicates to a staging folder (undoable) or send to Recycle Bin (recoverable)
-- Exports a CSV report
+- Exports duplicate groups to CSV or JSON, including each group's content hash, size, and file paths
 - Colored console + progress bars
 - Never modifies anything without explicit confirmation
 
@@ -108,6 +108,17 @@ winget uninstall varadisthedev.DupeLocatR   # once available via winget
 ```
 
 If you installed from the release ZIP, delete the extracted folder and remove it from `PATH`.
+
+## Tests
+
+The Pester suite covers recursive scanning, file hashing, and duplicate keep strategies. Run it locally with PowerShell 5.1 or later:
+
+```powershell
+Install-Module Pester -MinimumVersion 5.0.0 -MaximumVersion 5.99.99 -Scope CurrentUser
+Invoke-Pester -Path ./tests -CI
+```
+
+GitHub Actions runs the same suite on `windows-latest` for every pull request.
 
 ---
 
