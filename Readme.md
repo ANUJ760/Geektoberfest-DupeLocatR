@@ -6,29 +6,29 @@
 
 ## Install
 
-**Quick download:** [DupeLocatR-1.0.0.zip](https://github.com/Geektoberfest/Geektoberfest-DupeLocatR/releases/download/v1.0.0/DupeLocatR-1.0.0.zip) · [All releases](https://github.com/Geektoberfest/Geektoberfest-DupeLocatR/releases)
+**⬇️ Quick download:** [DupeLocatR-1.0.0.zip](https://github.com/Geektoberfest/Geektoberfest-DupeLocatR/releases/download/v1.0.0/DupeLocatR-1.0.0.zip) · [All releases](https://github.com/Geektoberfest/Geektoberfest-DupeLocatR/releases)
 
-### Download from GitHub Releases (available now)
+### Download from GitHub Releases *(available now)*
 
 1. Download `DupeLocatR-<version>.zip` from the [latest release](https://github.com/Geektoberfest/Geektoberfest-DupeLocatR/releases/latest).
 2. Extract it anywhere and add that folder to your `PATH`.
 3. Open any terminal and type `dlr`.
 
-### Via Scoop (available now, one command)
+### via Scoop *(available now, one command)*
 
 ```powershell
 scoop install https://raw.githubusercontent.com/varadisthedev/DupeLocatR/main/scoop/dupelocatr.json
 dlr
 ```
 
-Requires [Scoop](https://scoop.sh/). Don't have it? Install it first:
+Requires [Scoop](https://scoop.sh). Don't have it? Install it first:
 
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 irm get.scoop.sh | iex
 ```
 
-### Via winget (pending review — not yet available)
+### via winget *(pending review — not yet available)*
 
 The manifest has been submitted to `microsoft/winget-pkgs` and is awaiting approval. Once merged:
 
@@ -50,13 +50,15 @@ dlr -v              Show the installed version
 
 The same help is available in the app via menu option **[4] About / help**.
 
-### Manual install (no package manager)
+---
+
+## Manual install (no package manager)
 
 ```powershell
 # Clone or download the repo, then:
 powershell -ExecutionPolicy Bypass -File DupeLocatr.ps1
 
-# Scan a specific folder:
+# Or scan a specific folder:
 powershell -ExecutionPolicy Bypass -File DupeLocatr.ps1 -Path "D:\Photos"
 
 # Show the version:
@@ -73,7 +75,7 @@ Run_DupeLocatr.bat
 DupeLocatR uses a **3-stage tiered hashing pipeline** to avoid wasting I/O on large files:
 
 | Stage | What happens | Cost |
-|---|---|---|
+| ------- | ------------- | ------ |
 | **1 — Size grouping** | Files with unique sizes are eliminated instantly | Zero disk reads |
 | **2 — Tiered sampling** | Files are fingerprinted based on their size tier (see below) | Minimal reads |
 | **3 — Full hash** | Only confirmed candidates are fully hashed (MD5 or SHA256) | Targeted |
@@ -81,7 +83,7 @@ DupeLocatR uses a **3-stage tiered hashing pipeline** to avoid wasting I/O on la
 ### Sampling tiers (Stage 2)
 
 | File size | Sample strategy |
-|---|---|
+| ----------- | ---------------- |
 | **< 10 MB** | Skip sampling → direct full hash |
 | **10 MB – 500 MB** | First 64 KB + Last 64 KB |
 | **> 500 MB** | First + Middle + Last + 2 deterministic-random 64 KB windows |
@@ -96,23 +98,21 @@ Excluded folders (`.git`, `node_modules`, `.vs`, etc.) are skipped **during** th
 
 - Finds duplicates across **all file types**: images, videos, music, documents, archives, etc.
 - Category filter: scan only Images, Videos, Music, etc.
-- **Keep strategy**: keep the alphabetically first / oldest / newest / shortest-path copy.
-- **Parallel hashing**: sampling and full-hash confirmation run across multiple threads (auto-tuned to CPU cores, configurable).
-- **Safe actions**: move duplicates to a staging folder (undoable) or send to Recycle Bin (recoverable).
-- Exports a CSV report.
-- Colored console and progress bars.
-- Never modifies anything without explicit confirmation.
+- **Keep strategy**: keep the alphabetically first / oldest / newest / shortest-path copy
+- **Parallel hashing**: sampling and full-hash confirmation run across multiple threads (auto-tuned to CPU cores, configurable)
+- **Safe actions**: Move duplicates to a staging folder (undoable) or send to Recycle Bin (recoverable)
+- Exports a CSV report
+- Colored console + progress bars
+- Never modifies anything without explicit confirmation
 
 ---
 
 ## Uninstall
 
 ```powershell
-scoop uninstall dupelocatr
-winget uninstall varadisthedev.DupeLocatR
+scoop uninstall dupelocatr                   # if installed via Scoop
+winget uninstall varadisthedev.DupeLocatR   # once available via winget
 ```
-
-The winget command will work once the package becomes available.
 
 If you installed from the release ZIP, delete the extracted folder and remove it from `PATH`.
 
