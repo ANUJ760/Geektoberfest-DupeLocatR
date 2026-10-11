@@ -120,4 +120,4 @@ If you installed from the release ZIP, delete the extracted folder and remove it
 
 ## License
 
-MIT
+This project is licensed under the [MIT License](LICENSE).
