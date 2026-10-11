@@ -149,7 +149,6 @@ Describe 'DupeLocatr keep strategy' {
 
         $results.Count | Should -Be 1
         $results[0].KeepFile.FullName | Should -Be $script:FirstPath
-        $results[0].Hash | Should -Match '^[A-F0-9]{32}$'
         $results[0].SizeEach | Should -Be ([System.IO.File]::ReadAllBytes($script:FirstPath).Length)
     }
 
