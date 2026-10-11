@@ -1,3 +1,4 @@
+Describe 'DupeLocatr' {
 BeforeAll {
     $script:AppScript = Join-Path $PSScriptRoot '..\DupeLocatr.ps1'
     . $script:AppScript
@@ -52,6 +53,50 @@ Describe 'DupeLocatr hashing' {
     }
 }
 
+Describe 'DupeLocatr report export' {
+    BeforeEach {
+        $keepPath = Join-Path $script:TestRoot 'keep,copy.txt'
+        $duplicatePath = Join-Path $script:TestRoot 'duplicate.txt'
+        [System.IO.File]::WriteAllText($keepPath, 'same contents')
+        [System.IO.File]::WriteAllText($duplicatePath, 'same contents')
+        $script:ExportGroup = [PSCustomObject]@{
+            Hash           = 'ABC123'
+            SizeEach       = 13
+            KeepFile       = Get-Item -LiteralPath $keepPath
+            DuplicateFiles = @((Get-Item -LiteralPath $duplicatePath))
+        }
+    }
+
+    It 'exports the group hash, size, roles, and paths to CSV' {
+        Export-DuplicateReport -Results @($script:ExportGroup) -Format CSV
+        $reportPath = Get-ChildItem -LiteralPath $script:TestRoot -Filter 'dupeLocatr_report_*.csv' | Select-Object -First 1
+        $rows = @(Import-Csv -LiteralPath $reportPath.FullName)
+
+        $rows.Count | Should -Be 2
+        $rows[0].Hash | Should -Be 'ABC123'
+        [long]$rows[0].SizeBytes | Should -Be 13
+        $rows[0].Role | Should -Be 'KEEP'
+        $rows[0].Path | Should -Be $script:ExportGroup.KeepFile.FullName
+        $rows[1].Role | Should -Be 'DUPLICATE'
+        $rows[1].Path | Should -Be $script:ExportGroup.DuplicateFiles[0].FullName
+    }
+
+    It 'exports grouped paths with roles to JSON' {
+        Export-DuplicateReport -Results @($script:ExportGroup) -Format JSON
+        $reportPath = Get-ChildItem -LiteralPath $script:TestRoot -Filter 'dupeLocatr_report_*.json' | Select-Object -First 1
+        $groups = @(Get-Content -LiteralPath $reportPath.FullName -Raw | ConvertFrom-Json)
+
+        $groups.Count | Should -Be 1
+        $groups[0].Hash | Should -Be 'ABC123'
+        [long]$groups[0].SizeBytes | Should -Be 13
+        $groups[0].Paths.Count | Should -Be 2
+        $groups[0].Paths[0].Role | Should -Be 'KEEP'
+        $groups[0].Paths[0].Path | Should -Be $script:ExportGroup.KeepFile.FullName
+        $groups[0].Paths[1].Role | Should -Be 'DUPLICATE'
+        $groups[0].Paths[1].Path | Should -Be $script:ExportGroup.DuplicateFiles[0].FullName
+    }
+}
+
 Describe 'DupeLocatr keep strategy' {
     BeforeEach {
         $nestedDir = Join-Path $script:TestRoot 'nested'
@@ -103,4 +148,5 @@ Describe 'DupeLocatr keep strategy' {
 
         $results[0].KeepFile.FullName | Should -Be $script:FirstPath
     }
+}
 }

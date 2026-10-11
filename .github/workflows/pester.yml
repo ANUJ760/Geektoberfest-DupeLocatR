@@ -14,10 +14,10 @@ jobs:
 
       - name: Install Pester
         shell: powershell
-        run: Install-Module -Name Pester -MinimumVersion 5.0.0 -Force -Scope CurrentUser -SkipPublisherCheck
+        run: Install-Module -Name Pester -MinimumVersion 5.0.0 -MaximumVersion 5.99.99 -Force -Scope CurrentUser -SkipPublisherCheck
 
       - name: Run tests
         shell: powershell
         run: |
-          Import-Module Pester -MinimumVersion 5.0.0 -Force
+          Import-Module Pester -MinimumVersion 5.0.0 -MaximumVersion 5.99.99 -Force
           Invoke-Pester -Path ./tests -CI
