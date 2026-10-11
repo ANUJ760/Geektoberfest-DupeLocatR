@@ -29,18 +29,46 @@ AfterEach {
 
 Describe 'DupeLocatr scanning' {
     It 'finds files recursively and skips excluded folders' {
-        $includedDir = Join-Path $script:TestRoot 'photos'
+        $includedDir = Join-Path $script:TestRoot 'photos with spaces'
         $excludedDir = Join-Path $script:TestRoot '.git'
+        $similarDir = Join-Path $script:TestRoot 'dupeLocatr_personal'
         New-Item -ItemType Directory -Path $includedDir | Out-Null
         New-Item -ItemType Directory -Path $excludedDir | Out-Null
+        New-Item -ItemType Directory -Path $similarDir | Out-Null
         [System.IO.File]::WriteAllText((Join-Path $script:TestRoot 'root.txt'), 'root')
         [System.IO.File]::WriteAllText((Join-Path $includedDir 'photo.txt'), 'photo')
         [System.IO.File]::WriteAllText((Join-Path $excludedDir 'ignored.txt'), 'ignored')
+        [System.IO.File]::WriteAllText((Join-Path $similarDir 'personal.txt'), 'personal')
 
         $files = @(Get-CandidateFiles)
 
-        $files.Count | Should -Be 2
-        ($files.FullName -join '|') | Should -Not -Match '\\.git\\'
+        $files.Count | Should -Be 3
+        $files.Name | Should -Contain 'root.txt'
+        $files.Name | Should -Contain 'photo.txt'
+        $files.Name | Should -Contain 'personal.txt'
+        $files.Name | Should -Not -Contain 'ignored.txt'
+    }
+
+    It 'uses the platform file-name rules for excluded directories' {
+        Update-ExcludeSet
+
+        Test-IsExcludedDirName '.git' | Should -BeTrue
+        Test-IsExcludedDirName '.GIT' | Should -Be (Test-UseCaseInsensitivePaths)
+    }
+
+    It 'does not follow linked directories on Unix' {
+        if (Test-IsWindows) { return }
+        $outsideDir = Join-Path ([System.IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $outsideDir | Out-Null
+        try {
+            [System.IO.File]::WriteAllText((Join-Path $outsideDir 'outside.txt'), 'outside')
+            New-Item -ItemType SymbolicLink -Path (Join-Path $script:TestRoot 'linked') -Target $outsideDir | Out-Null
+
+            @(Get-CandidateFiles).Count | Should -Be 0
+        }
+        finally {
+            Remove-Item -LiteralPath $outsideDir -Recurse -Force
+        }
     }
 }
 
@@ -94,6 +122,50 @@ Describe 'DupeLocatr report export' {
         $groups[0].Paths[0].Path | Should -Be $script:ExportGroup.KeepFile.FullName
         $groups[0].Paths[1].Role | Should -Be 'DUPLICATE'
         $groups[0].Paths[1].Path | Should -Be $script:ExportGroup.DuplicateFiles[0].FullName
+    }
+}
+
+Describe 'DupeLocatr move action' {
+    It 'stages duplicate files without overwriting matching names' {
+        $firstDir = Join-Path $script:TestRoot 'first'
+        $secondDir = Join-Path $script:TestRoot 'second'
+        New-Item -ItemType Directory -Path $firstDir | Out-Null
+        New-Item -ItemType Directory -Path $secondDir | Out-Null
+        $keepPath = Join-Path $script:TestRoot 'keep.txt'
+        $firstPath = Join-Path $firstDir 'copy.txt'
+        $secondPath = Join-Path $secondDir 'copy.txt'
+        foreach ($filePath in @($keepPath, $firstPath, $secondPath)) {
+            [System.IO.File]::WriteAllText($filePath, 'same contents')
+        }
+        $group = [PSCustomObject]@{
+            Hash           = 'ABC123'
+            SizeEach       = 13
+            KeepFile       = Get-Item -LiteralPath $keepPath
+            DuplicateFiles = @((Get-Item -LiteralPath $firstPath), (Get-Item -LiteralPath $secondPath))
+        }
+        Mock Read-Host { 'Y' }
+
+        Invoke-MoveDuplicates -Results @($group)
+
+        Test-Path -LiteralPath $keepPath | Should -BeTrue
+        Test-Path -LiteralPath $firstPath | Should -BeFalse
+        Test-Path -LiteralPath $secondPath | Should -BeFalse
+        $stagedFiles = @(Get-ChildItem -LiteralPath (Join-Path $script:TestRoot $Script:DupeFolderName) -File)
+        $stagedFiles.Count | Should -Be 2
+        ($stagedFiles.Name | Select-Object -Unique).Count | Should -Be 2
+    }
+}
+
+Describe 'DupeLocatr deletion action' {
+    It 'does not delete files on Unix without a Recycle Bin' {
+        if (Test-IsWindows) { return }
+        $filePath = Join-Path $script:TestRoot 'keep.txt'
+        [System.IO.File]::WriteAllText($filePath, 'keep me')
+        Mock Read-Host { '' }
+
+        Invoke-DeleteDuplicates -Results @([PSCustomObject]@{ DuplicateFiles = @((Get-Item -LiteralPath $filePath)) })
+
+        Test-Path -LiteralPath $filePath | Should -BeTrue
     }
 }
 
