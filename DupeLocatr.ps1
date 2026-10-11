@@ -871,4 +871,6 @@ function Show-MainMenu {
 #  ENTRY POINT
 # ======================================================================
 if ($Help) { Show-Help; return }
-Show-MainMenu
+if ($MyInvocation.InvocationName -ne '.') {
+    Show-MainMenu
+}

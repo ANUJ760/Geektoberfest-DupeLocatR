@@ -109,6 +109,17 @@ winget uninstall varadisthedev.DupeLocatR   # once available via winget
 
 If you installed from the release ZIP, delete the extracted folder and remove it from `PATH`.
 
+## Tests
+
+The Pester suite covers recursive scanning, file hashing, and duplicate keep strategies. Run it locally with PowerShell 5.1 or later:
+
+```powershell
+Install-Module Pester -MinimumVersion 5.0.0 -Scope CurrentUser
+Invoke-Pester -Path ./tests -CI
+```
+
+GitHub Actions runs the same suite on `windows-latest` for every pull request.
+
 ---
 
 ## License
