@@ -114,7 +114,7 @@ If you installed from the release ZIP, delete the extracted folder and remove it
 The Pester suite covers recursive scanning, file hashing, and duplicate keep strategies. Run it locally with PowerShell 5.1 or later:
 
 ```powershell
-Install-Module Pester -MinimumVersion 5.0.0 -Scope CurrentUser
+Install-Module Pester -MinimumVersion 5.0.0 -MaximumVersion 5.99.99 -Scope CurrentUser
 Invoke-Pester -Path ./tests -CI
 ```
 
