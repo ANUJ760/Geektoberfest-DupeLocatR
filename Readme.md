@@ -49,10 +49,12 @@ winget install varadisthedev.DupeLocatR
 
 ## Usage
 
-```
+```text
 dlr                 Scan the current directory
 dlr <folder>        Scan a specific folder, e.g. dlr D:\Photos
 dlr help            Show the command list (also: -h, --help, /?)
+dlr --version       Show the installed version
+dlr -v              Show the installed version
 ```
 
 On Linux and macOS, use the `dlr` shell launcher with PowerShell 7 (`pwsh`):
@@ -60,6 +62,7 @@ On Linux and macOS, use the `dlr` shell launcher with PowerShell 7 (`pwsh`):
 ```sh
 ./dlr ~/Photos
 ./dlr --help
+./dlr --version
 ```
 
 The same help is available in the app via menu option **[4] About / help**.
@@ -71,8 +74,13 @@ The same help is available in the app via menu option **[4] About / help**.
 ```powershell
 # Clone or download the repo, then:
 powershell -ExecutionPolicy Bypass -File DupeLocatr.ps1
+
 # Or scan a specific folder:
 powershell -ExecutionPolicy Bypass -File DupeLocatr.ps1 -Path "D:\Photos"
+
+# Show the version:
+powershell -ExecutionPolicy Bypass -File DupeLocatr.ps1 -Version
+
 # Or double-click:
 Run_DupeLocatr.bat
 ```
@@ -142,4 +150,4 @@ GitHub Actions runs the same suite on Windows, Linux, and macOS for every pull r
 
 ## License
 
-MIT
+This project is licensed under the [MIT License](LICENSE).

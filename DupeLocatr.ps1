@@ -2,8 +2,14 @@
 
 param(
     [string]$Path = (Get-Location).Path,
-    [Alias('h','?')][switch]$Help
+    [Alias('h','?')][switch]$Help,
+    [Alias('v')][switch]$Version
 )
+
+if ($Version) {
+    Write-Output "DupeLocatR 1.0.0"
+    exit 0
+}
 
 # ======================================================================
 #  CONFIG / STATE
@@ -803,20 +809,20 @@ function Show-SettingsMenu {
     }
 }
 
+
 function Show-Help {
     Write-Host "  COMMANDS" -ForegroundColor Magenta
     Write-Host "   dlr                  Scan the current directory" -ForegroundColor White
     $examplePath = if (Test-IsWindows) { 'D:\Photos' } else { '~/Photos' }
     Write-Host "   dlr <folder>         Scan a specific folder, e.g. dlr $examplePath" -ForegroundColor White
     Write-Host "   dlr help | -h | /?   Show this help" -ForegroundColor White
-    Write-Host ""
-    $shellCommand = if (Test-IsWindows) { 'powershell' } else { 'pwsh' }
-    Write-Host "  Without the shim:  $shellCommand -File DupeLocatr.ps1 [-Path <folder>] [-Help]" -ForegroundColor Gray
+    Write-Host "   dlr --version | -v   Show the installed version" -ForegroundColor White
     Write-Host ""
     Write-Host "  MENU" -ForegroundColor Magenta
     Write-Host "   [1] Start duplicate scan   [2] Settings   [3] View log   [4] Help   [5] Exit" -ForegroundColor White
     Write-Host ""
 }
+
 
 function Show-MainMenu {
     $exit = $false

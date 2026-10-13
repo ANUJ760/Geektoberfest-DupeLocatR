@@ -16,6 +16,7 @@ fi
 
 case ${1-} in
     help|-h|--help|'-?'|'/?') exec pwsh -NoProfile -File "$script_path" -Help ;;
+    -v|--version) exec pwsh -NoProfile -File "$script_path" -Version ;;
 esac
 
 target=${1:-$PWD}
